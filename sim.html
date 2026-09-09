@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>AI 시뮬레이터 (헤드리스)</title>
+<style>
+  body { font-family: "Malgun Gothic", sans-serif; background:#0b2224; color:#eef4f2; margin:0; padding:16px; }
+  h1 { font-size:18px; color:#f3d78a; }
+  .panel { background:#123a3a; border:1px solid rgba(216,181,104,0.3); border-radius:10px; padding:14px 16px; margin-bottom:14px; }
+  label { display:inline-block; margin-right:14px; font-size:13px; }
+  select, input[type=number] { background:#0c2c2e; color:#eef4f2; border:1px solid rgba(216,181,104,0.4); border-radius:5px; padding:3px 6px; }
+  button { background:linear-gradient(145deg,#f3d78a,#c9a054); color:#26210f; border:none; padding:8px 16px; border-radius:999px; font-weight:700; cursor:pointer; margin-right:8px; }
+  button:disabled { opacity:0.5; cursor:default; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { border-bottom:1px solid rgba(255,255,255,0.1); padding:4px 8px; text-align:right; }
+  th:first-child, td:first-child { text-align:left; }
+  #log { height:320px; overflow-y:auto; background:#08191d; border:1px solid rgba(216,181,104,0.2); border-radius:6px; padding:8px; font-family:monospace; font-size:12px; white-space:pre-wrap; }
+  #status { font-size:13px; color:#9fd0c8; margin-top:6px; }
+  .warn { color:#ff8a8a; }
+</style>
+</head>
+<body>
+
+<h1>🀄 AI 시뮬레이터 (헤드리스 — 렌더링 없이 다수 국을 빠르게 자동 진행)</h1>
+
+<div class="panel">
+  <label>목표 좌석(분석 대상) 성향:
+    <select id="targetPersona"></select>
+  </label>
+  <label>상대 3자리:
+    <select id="oppMode">
+      <option value="random">매 게임 무작위</option>
+      <option value="fixed">고정</option>
+    </select>
+  </label>
+  <label>목표 국(핸드) 수: <input type="number" id="targetHands" value="300" min="10" step="10" style="width:70px"></label>
+  <br><br>
+  <button id="startBtn">시작</button>
+  <button id="stopBtn" disabled>중지</button>
+  <button id="downloadBtn">로그+통계 다운로드(JSON)</button>
+  <button id="clearHistoryBtn">저장된 이전 기록 지우기</button>
+  <div id="status">대기 중</div>
+</div>
+
+<div class="panel">
+  <h3 style="margin-top:0">5대 지표</h3>
+  <table id="statsTable">
+    <tr><th>지표</th><th>값</th></tr>
+    <tr><td>승률(1위 비율)</td><td id="s_winrate">-</td></tr>
+    <tr><td>평균 순위</td><td id="s_avgrank">-</td></tr>
+    <tr><td>평균타점</td><td id="s_avgpoint">-</td></tr>
+    <tr><td>화료율</td><td id="s_agari">-</td></tr>
+    <tr><td>방총률</td><td id="s_houjuu">-</td></tr>
+    <tr><td>후로율</td><td id="s_furo">-</td></tr>
+    <tr><td>텐파이(유국시) 비율</td><td id="s_tenpai">-</td></tr>
+    <tr><td>폴드(오리) 발동 비율</td><td id="s_fold">-</td></tr>
+  </table>
+</div>
+
+<div class="panel">
+  <h3 style="margin-top:0">실행 로그 (최근 500줄, 다운로드로 전체 보존)</h3>
+  <div id="log"></div>
+</div>
+
+<script src="js/tiles.js"></script>
+<script src="js/hand.js"></script>
+<script src="js/yaku.js"></script>
+<script src="js/personas.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/game.js"></script>
+<script src="js/sim-runner.js"></script>
+</body>
+</html>

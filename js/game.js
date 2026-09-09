@@ -131,7 +131,11 @@ function buildAiContext(player) {
     anyOpponentRiichi: riichiOpponents.length > 0,
     dragonPairCount: counts.slice(31, 34).filter(c => c >= 2).length,
     doraCountInHand, ownShanten, isBehind, hasBigLead, rank, threatLevel,
+    // 요구패 "장수"(중복 포함, 탕야오/대요구 판단용) — 예: 9m 3장은 이 카운트에 3으로 잡힘
     terminalHonorCount: player.hand.filter(isTerminalOrHonor).length,
+    // 국사무쌍 전용: 실제 국사 샹텐(13종류 요구패 중 몇 종류를 가졌는지 기준). 위 terminalHonorCount와
+    // 달리 같은 패를 여러 장 들고 있어도 "종류 수"만 세므로, 국사와 무관한 손패가 잘못 국사로 빠지지 않는다.
+    kokushiShanten: shantenKokushi(counts),
     pairCount: counts.filter(c => c >= 2).length,
     bodyCount: player.melds.length + countCompleteSets(counts),
 
@@ -171,10 +175,14 @@ function buildAiContext(player) {
     }
   };
 
+  // 진짜 접을 이유(리치)와 단순 경계(후로 2회 등)를 구분한다.
+  // 후로만으로 threatLevel이 2까지 올라갈 수 있는데, 그것만으로 전면 오리를 시키면
+  // "리치처럼 확정적인 위험에만 접는다"는 의도보다 훨씬 자주(거의 매 국) 접게 되어 버린다.
+  const hasRiichiThreat = riichiOpponents.length > 0;
   ctx.shouldFold = () => {
-    if (ctx.threatLevel >= 2 && ctx.ownShanten >= 2) return true;
-    if (ctx.threatLevel >= 2 && ctx.ownShanten === 1) return true;
-    if (ctx.ownShanten === 0 && ctx.waitTileCount() <= 2) return true;
+    if (hasRiichiThreat && ctx.ownShanten >= 2) return true;
+    if (hasRiichiThreat && ctx.ownShanten === 1 && ctx.threatLevel >= 2) return true;
+    if (ctx.ownShanten === 0 && ctx.waitTileCount() <= 1) return true;
     return false;
   };
 
@@ -860,6 +868,9 @@ function updatePersonaDesc() {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  // index.html(실제 게임 화면)이 아닌 다른 페이지(예: sim.html 헤드리스 시뮬레이터)에서
+  // game.js를 재사용할 수도 있으므로, 해당 UI 요소가 없으면 조용히 건너뛴다.
+  if (!el('start-btn')) return;
   setupPersonaPickers();
   el('start-btn').onclick = () => { el('start-screen').style.display = 'none'; el('game-screen').style.display = 'block'; newGame(); };
   el('log-toggle').onclick = () => { el('log-panel').classList.toggle('open'); };

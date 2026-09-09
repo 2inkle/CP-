@@ -105,7 +105,11 @@ const PERSONAS = [
       { when: (c) => c.threatLevel >= 1 && c.shouldFold(), decision: 'fold' },
       // 큰 격차 1위 + 위협 감지 → 손패를 키우기보다 안전패를 우선 (공격성 저하)
       { when: (c) => c.hasBigLead && c.threatLevel >= 1, decision: 'cautious' },
-      { when: (c) => c.terminalHonorCount >= 6, decision: 'kokushi' },
+      // 국사무쌍은 진짜로 가까울 때만 노린다. 무작위 13장 손패도 우연히 요구패 종류가 평균
+      // 8~9종 가까이 스쳐가므로(자패/노두가 전체 패의 약 38%), 느슨한 기준(예: 6종류 이상)은
+      // 실전에서 거의 매 국 걸려버려 국사만 쫓다 보통 손패로는 절대 화료를 못 하게 만드는
+      // 버그성 결과를 냈다. 국사 샹텐이 표준형 샹텐보다 뚜렷이 앞설 때만 갈아탄다.
+      { when: (c) => c.kokushiShanten <= 3 && c.kokushiShanten <= c.ownShanten, decision: 'kokushi' },
       { when: (c) => c.pairCount >= 3 && c.bodyCount < 2, decision: 'chiitoi' },
       { when: (c) => c.isBehind && c.terminalHonorCount <= 2, decision: 'tanyao' },
       { when: (c) => c.isBehind && c.terminalHonorCount <= 5, decision: 'chanta' }
