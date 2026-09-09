@@ -300,7 +300,8 @@ async function runHand() {
       if (!player.isHuman) await sleep(500);
 
       const isHaitei = state.wall.length === 0 && !rinshan;
-      const win = wouldWin(player, drawnTile, true, { isRinshan: rinshan, isHaitei, ippatsu: player.riichi && player.ippatsuEligible });
+      const handBeforeDraw = player.hand.filter(t => t.uid !== drawnTile.uid);
+      const win = wouldWin(player, drawnTile, true, { isRinshan: rinshan, isHaitei, ippatsu: player.riichi && player.ippatsuEligible }, handBeforeDraw);
       if (win) {
         if (player.isHuman) {
           logMsg('쯔모 가능! 화료하시겠습니까?');
