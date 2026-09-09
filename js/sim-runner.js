@@ -40,6 +40,18 @@ function setupSimOverrides() {
   const origDoChi = window.doChi;
   window.doChi = function(player) { const r = origDoChi.apply(this, arguments); if (sim && player.id === sim.targetSeatId) sim.calledThisHand = true; return r; };
 
+  // 후로율 = 실제 후로 횟수 / 후로 가능했던 횟수. aiDecideCallOnDiscard는 대상 좌석에게
+  // 퐁 또는 치가 "실제로 가능한" 상황에서만 호출되므로, 호출 자체를 기회 1회로 센다.
+  const origAiDecideCallOnDiscard = window.aiDecideCallOnDiscard;
+  window.aiDecideCallOnDiscard = function(player) {
+    const result = origAiDecideCallOnDiscard.apply(this, arguments);
+    if (sim && player.id === sim.targetSeatId) {
+      sim.callOpportunities++;
+      if (result && result.action !== 'pass') sim.callsTaken++;
+    }
+    return result;
+  };
+
   const origSetupHand = window.setupHand;
   window.setupHand = function() {
     if (sim) { sim.calledThisHand = false; sim.targetCtxHistory = []; }
@@ -182,7 +194,9 @@ function updateStatsUI() {
   set('s_avgpoint', sim.wins ? (sim.winPoints / sim.wins).toFixed(0) : '-');
   set('s_agari', `${(sim.wins / hands * 100).toFixed(1)}% (${sim.wins}/${hands}국)`);
   set('s_houjuu', `${(sim.dealIns / hands * 100).toFixed(1)}% (${sim.dealIns}/${hands}국)`);
-  set('s_furo', `${(sim.calledHands / hands * 100).toFixed(1)}% (${sim.calledHands}/${hands}국)`);
+  set('s_furo', sim.callOpportunities
+    ? `${(sim.callsTaken / sim.callOpportunities * 100).toFixed(1)}% (${sim.callsTaken}/${sim.callOpportunities}회 — 실제 후로/후로 가능 횟수)`
+    : '- (0/0회, 후로 기회 없음)');
   set('s_tenpai', sim.drawCount ? `${(sim.drawTenpaiCount / sim.drawCount * 100).toFixed(1)}% (${sim.drawTenpaiCount}/${sim.drawCount}유국)` : '-');
   const foldedHands = sim.handRecords.filter(r => r.foldedAnyTurn).length;
   set('s_fold', `${(foldedHands / hands * 100).toFixed(1)}% (${foldedHands}/${hands}국)`);
@@ -201,6 +215,7 @@ function saveSimToHistory() {
       handsDone: sim.handsDone,
       gamesDone: sim.gamesDone,
       wins: sim.wins, winPoints: sim.winPoints, dealIns: sim.dealIns, calledHands: sim.calledHands,
+      callOpportunities: sim.callOpportunities, callsTaken: sim.callsTaken,
       firstPlaceGames: sim.firstPlaceGames, ranks: sim.ranks,
       drawCount: sim.drawCount, drawTenpaiCount: sim.drawTenpaiCount,
       watchdogKicks: sim.watchdogKicks,
@@ -223,6 +238,7 @@ function downloadSimResult() {
     stats: {
       handsDone: sim.handsDone, gamesDone: sim.gamesDone,
       wins: sim.wins, winPoints: sim.winPoints, dealIns: sim.dealIns, calledHands: sim.calledHands,
+      callOpportunities: sim.callOpportunities, callsTaken: sim.callsTaken,
       firstPlaceGames: sim.firstPlaceGames, ranks: sim.ranks,
       drawCount: sim.drawCount, drawTenpaiCount: sim.drawTenpaiCount, watchdogKicks: sim.watchdogKicks
     },
@@ -251,6 +267,7 @@ function startSim() {
     fixedOpponents: ['standard', 'standard', 'standard'],
     handsDone: 0, gamesDone: 0,
     wins: 0, winPoints: 0, dealIns: 0, calledHands: 0, calledThisHand: false,
+    callOpportunities: 0, callsTaken: 0,
     firstPlaceGames: 0, ranks: [],
     drawCount: 0, drawTenpaiCount: 0,
     lastTargetCtx: null, targetCtxHistory: [],
