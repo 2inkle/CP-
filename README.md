@@ -93,3 +93,4 @@
 - `js/game.js` - 게임 진행 및 UI 렌더링
 - `sim.html` / `js/sim-runner.js` - 헤드리스 AI 시뮬레이터 (지표 측정 + 로그 저장)
 - `serve.ps1` - (선택) 로컬 정적 서버가 필요한 경우 사용하는 PowerShell 스크립트
+- `SEOGAEUL_TUNING.md` - 서가을 AI 튜닝 기록(시뮬레이터로 찾은 버그, 수정 내역, 남은 과제)
