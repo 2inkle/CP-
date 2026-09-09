@@ -215,6 +215,16 @@ function findWaitTiles(handTiles, numSetsNeeded) {
   return waits;
 }
 
+// 후리텐 판정: 이미 후리텐이면 유지(리셋 안 함). 텐파이 상태에서 자신의 대기패 중
+// 하나라도 자기 버림패(현재 손패 도달 이전의 것 포함)에 있으면 후리텐.
+function isFuriten(player) {
+  if (player.furiten) return true;
+  const numSetsNeeded = 4 - player.melds.length;
+  if (calcShanten(countsFromTiles(player.hand), numSetsNeeded) !== 0) return false;
+  const waits = findWaitTiles(player.hand, numSetsNeeded);
+  return waits.some(w => player.discards.some(d => d.suit === w.suit && d.rank === w.rank));
+}
+
 // 보이지 않는 곳에 남아있는 대기패 매수 (텐파이가 아니면 0)
 function countRemainingWaitTiles(player) {
   const numSetsNeeded = 4 - player.melds.length;
@@ -385,13 +395,9 @@ async function runHand() {
     renderAll();
     logMsg(`${player.name} 버림: ${tileLabel(discardTile.suit, discardTile.rank)}`);
 
-    // 자기 자신 버림패로 인한 furiten 체크 (자신이 화료 가능한 패를 버렸다면 영구 후리텐)
-    if (!player.riichi) {
-      const selfWin = wouldWin(player, discardTile, false);
-      if (selfWin) player.furiten = true;
-    } else {
-      // 리치 중엔 항상 자기 대기패 확인
-    }
+    // 후리텐 상태 갱신: 텐파이 상태에서 자신의 대기패 중 하나라도 스스로 버린 적 있으면 후리텐
+    // (지금 막 버린 패뿐 아니라, 예전에 버려서 손패에 없는 대기패도 포함해 매번 다시 계산)
+    player.furiten = isFuriten(player);
 
     // 다른 3명의 콜 처리 (론 > 퐁/깡 > 치)
     const callResult = await resolveCalls(turnIdx, discardTile);

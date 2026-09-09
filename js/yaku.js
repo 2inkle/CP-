@@ -129,7 +129,10 @@ function evaluateHand(ctx) {
     const decomps = decomposeExact(concealedCounts, numSetsNeeded);
     for (const d of decomps) {
       const meldSets = melds.map(meldToSet);
-      const allSets = meldSets.concat(d.sets);
+      // d.sets는 손패(암패) 분해 결과이므로 기본적으로 전부 암패(concealed)다.
+      // (론으로 완성된 트리플렛만 아래에서 개별적으로 명커로 재취급됨)
+      const concealedSets = d.sets.map(s => ({ ...s, concealed: true }));
+      const allSets = meldSets.concat(concealedSets);
       const pair = d.pair;
       const waitCandidates = findWaitCandidates(d.sets, pair, winTile);
 
