@@ -49,10 +49,11 @@ function logMsg(msg) {
 function setupHand() {
   for (const p of state.players) {
     p.hand = []; p.melds = []; p.discards = [];
-    p.riichi = false; p.riichiDeclaredAt = -1; p.ippatsuEligible = false; p.furiten = false;
+    p.riichi = false; p.riichiDeclaredAt = -1; p.riichiTimelineIdx = -1; p.ippatsuEligible = false; p.furiten = false;
     p.discardCalledAway = false; // 나가시만간 판정용: 이번 국에 이 사람 버림패가 콜(퐁/치)당한 적 있는지
   }
   state.anyCallMadeThisHand = false; // 천화/지화 판정용: 이번 국에 퐁/치/깡이 한 번이라도 있었는지
+  state.discardTimeline = []; // 안전패(리치 후 통과패) 판정용: 이번 국의 전체 버림 순서 기록 {playerIdx, tile}
   let all = shuffle(createWallTiles());
   for (let r = 0; r < 13; r++) {
     for (let i = 0; i < 4; i++) {
@@ -153,8 +154,8 @@ function buildAiContext(player) {
     discardedCountOf: (tile) => state.players.reduce((sum, p) =>
       sum + p.discards.filter(t => t.suit === tile.suit && t.rank === tile.rank).length, 0),
 
-    dangerFor: (tile) => riichiOpponents.reduce((max, opp) => Math.max(max, estimateTileDanger(tile, opp)), 0),
-    threatDangerFor: (tile) => threatPlayers.reduce((max, opp) => Math.max(max, estimateTileDanger(tile, opp, true)), 0),
+    dangerFor: (tile) => riichiOpponents.reduce((max, opp) => Math.max(max, estimateTileDanger(tile, opp, player)), 0),
+    threatDangerFor: (tile) => threatPlayers.reduce((max, opp) => Math.max(max, estimateTileDanger(tile, opp, player, true)), 0),
 
     waitTileCount: () => {
       if (memoWaitCount === null) memoWaitCount = countRemainingWaitTiles(player);
@@ -394,8 +395,12 @@ async function runHand() {
     player.hand = sortHand(player.hand);
     player.discards.push(discardTile);
     state.__lastDiscarderIdx = turnIdx;
-    if (player.riichi && player.riichiDeclaredAt === -1) player.riichiDeclaredAt = player.discards.length - 1;
+    if (player.riichi && player.riichiDeclaredAt === -1) {
+      player.riichiDeclaredAt = player.discards.length - 1;
+      player.riichiTimelineIdx = state.discardTimeline.length; // 이 버림(선언패)부터 안전패 판정에 포함
+    }
     player.ippatsuEligible = player.riichi && player.discards.length - 1 === player.riichiDeclaredAt;
+    state.discardTimeline.push({ playerIdx: turnIdx, tile: discardTile });
 
     renderAll();
     logMsg(`${player.name} 버림: ${tileLabel(discardTile.suit, discardTile.rank)}`);

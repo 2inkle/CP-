@@ -25,24 +25,45 @@ function resolveGoal(persona, ctx) {
   return evaluateGate(persona.goalRules, ctx) || 'normal';
 }
 
+// 공유 판단(모든 페르소나가 성향과 별개로 갖는 기본 실력): 진짜 위험(threatLevel>=1)할 때
+// shouldFold() 판정이면 손패 가치를 접고 안전패 위주로 갈아타고, 그 정도까지는 아니면
+// "밀되 같은 값이면 안전한 쪽" 정도로 살짝 기운다. 완전 무시도, 무조건 회피도 아닌 절충.
+const PUSH_FOLD_RULES = [
+  { when: (c, t) => c.threatLevel >= 1 && c.shouldFold() && c.threatDangerFor(t) === 0, weight: 100 },
+  { when: (c, t) => c.threatLevel >= 1 && c.shouldFold() && c.threatDangerFor(t) === 1, weight: 40 },
+  { when: (c, t) => c.threatLevel >= 1 && c.shouldFold() && c.threatDangerFor(t) === 2, weight: -100 },
+  { when: (c, t) => c.threatLevel >= 1 && !c.shouldFold() && c.threatDangerFor(t) === 2, weight: -6 },
+  { when: (c, t) => c.threatLevel >= 1 && !c.shouldFold() && c.threatDangerFor(t) === 0, weight: 6 }
+];
+
+// 속공형용 완화 버전: 어지간해서는 접지 않고 계속 미는 성향을 유지하되, 답이 없는 상황(샹텐 2 이상 +
+// 강한 위협)에서만 최소한으로 접는다.
+const SPEED_PUSH_RULES = [
+  { when: (c, t) => c.threatLevel >= 2 && c.shouldFold() && c.ownShanten >= 2 && c.threatDangerFor(t) === 0, weight: 80 },
+  { when: (c, t) => c.threatLevel >= 2 && c.shouldFold() && c.ownShanten >= 2 && c.threatDangerFor(t) === 2, weight: -80 },
+  { when: (c, t) => c.threatLevel >= 1 && c.threatDangerFor(t) === 2, weight: -4 },
+  { when: (c, t) => c.threatLevel >= 1 && c.threatDangerFor(t) === 0, weight: 4 }
+];
+
 const PERSONAS = [
   {
     id: 'standard',
     name: '표준형',
-    desc: '텐파이면 항상 리치, 역패만 퐁. 특별한 취향 없음 (기본 AI).',
-    discardRules: [],
+    desc: '샹텐·우케이레를 계산해 효율적으로 진행하고, 텐파이면 항상 리치. 위험할 땐 상황에 맞게 밀거나 접는다.',
+    discardRules: [...PUSH_FOLD_RULES],
     riichiRules: [],
     callRules: []
   },
   {
     id: 'honitsu',
     name: '혼일색 지향 (공격형)',
-    desc: '한 수트에 패가 몰리면 그 수트를 지키고 다른 수트를 먼저 정리. 콜은 자제하며 멘젠 유지.',
+    desc: '한 수트에 패가 몰리면 그 수트를 지키고 다른 수트를 먼저 정리. 콜은 자제하며 멘젠 유지. 위험할 땐 상황에 맞게 밀거나 접는다.',
     discardRules: [
       // 다른 숫자패 수트(목표 수트가 아닌)는 먼저 버림 (자패는 혼일색과 호환되므로 대상 아님)
       { when: (ctx, tile) => tile.suit !== 'z' && ctx.targetSuit && tile.suit !== ctx.targetSuit, weight: 6 },
       // 목표 수트 패는 최대한 유지
-      { when: (ctx, tile) => ctx.targetSuit && tile.suit === ctx.targetSuit, weight: -8 }
+      { when: (ctx, tile) => ctx.targetSuit && tile.suit === ctx.targetSuit, weight: -8 },
+      ...PUSH_FOLD_RULES
     ],
     riichiRules: [],
     callRules: []
@@ -50,8 +71,8 @@ const PERSONAS = [
   {
     id: 'speed',
     name: '속공형',
-    desc: '샹텐이 나아지면 치/퐁을 적극적으로 사용해 빠르게 진행. 리치보다 다마텐(무언의 텐파이)을 선호.',
-    discardRules: [],
+    desc: '샹텐이 나아지면 치/퐁을 적극적으로 사용해 빠르게 진행. 리치보다 다마텐(무언의 텐파이)을 선호. 어지간하면 계속 밀어붙임.',
+    discardRules: [...SPEED_PUSH_RULES],
     riichiRules: [
       { when: () => true, decision: 'dama' }
     ],
