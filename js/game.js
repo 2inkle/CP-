@@ -50,7 +50,9 @@ function setupHand() {
   for (const p of state.players) {
     p.hand = []; p.melds = []; p.discards = [];
     p.riichi = false; p.riichiDeclaredAt = -1; p.ippatsuEligible = false; p.furiten = false;
+    p.discardCalledAway = false; // 나가시만간 판정용: 이번 국에 이 사람 버림패가 콜(퐁/치)당한 적 있는지
   }
+  state.anyCallMadeThisHand = false; // 천화/지화 판정용: 이번 국에 퐁/치/깡이 한 번이라도 있었는지
   let all = shuffle(createWallTiles());
   for (let r = 0; r < 13; r++) {
     for (let i = 0; i < 4; i++) {
@@ -310,8 +312,11 @@ async function runHand() {
       if (!player.isHuman) await sleep(500);
 
       const isHaitei = state.wall.length === 0 && !rinshan;
+      const isFirstUninterruptedDraw = !rinshan && player.discards.length === 0 && !state.anyCallMadeThisHand;
+      const isTenhou = isFirstUninterruptedDraw && player.id === state.dealerIdx;
+      const isChiihou = isFirstUninterruptedDraw && player.id !== state.dealerIdx;
       const handBeforeDraw = player.hand.filter(t => t.uid !== drawnTile.uid);
-      const win = wouldWin(player, drawnTile, true, { isRinshan: rinshan, isHaitei, ippatsu: player.riichi && player.ippatsuEligible }, handBeforeDraw);
+      const win = wouldWin(player, drawnTile, true, { isRinshan: rinshan, isHaitei, isTenhou, isChiihou, ippatsu: player.riichi && player.ippatsuEligible }, handBeforeDraw);
       if (win) {
         if (player.isHuman) {
           logMsg('쯔모 가능! 화료하시겠습니까?');
@@ -452,6 +457,7 @@ function doAnkan(player, opt) {
   }
   player.melds.push({ kind: 'ankan', suit: opt.suit, rank: opt.rank, tiles, concealed: true });
   state.doraRevealed = Math.min(state.doraRevealed + 1, 5);
+  state.anyCallMadeThisHand = true;
   logMsg(`${player.name} 안깡: ${tileLabel(opt.suit, opt.rank)}`);
 }
 
@@ -556,6 +562,7 @@ function doPon(player, tile, fromIdx) {
   }
   player.melds.push({ kind: 'pon', suit: tile.suit, rank: tile.rank, tiles: taken.concat([tile]), concealed: false, fromIdx });
   removeFromDiscard(fromIdx, tile);
+  state.anyCallMadeThisHand = true;
   logMsg(`${player.name} 퐁!`);
 }
 
@@ -568,6 +575,7 @@ function doChi(player, tile, opt, fromIdx) {
   }
   player.melds.push({ kind: 'chi', suit: tile.suit, rank: opt.rank, tiles: taken.concat([tile]), concealed: false, fromIdx });
   removeFromDiscard(fromIdx, tile);
+  state.anyCallMadeThisHand = true;
   logMsg(`${player.name} 치!`);
 }
 
@@ -575,6 +583,7 @@ function removeFromDiscard(fromIdx, tile) {
   const p = state.players[fromIdx];
   const i = p.discards.findIndex(t => t.uid === tile.uid);
   if (i >= 0) p.discards.splice(i, 1);
+  p.discardCalledAway = true; // 나가시만간 무효화 (버림패가 퐁/치로 불려나감)
 }
 
 async function resolveWin(winInfos) {
@@ -594,9 +603,14 @@ async function resolveWin(winInfos) {
     logs.push(text);
 
     if (info.isTsumo) {
+      // 딜러가 화료하면 payments가 {ron, tsumoEach}(전원 동일 지불) 형태이고,
+      // 논딜러가 화료하면 {ron, tsumoDealer, tsumoNonDealer}(딜러/비딜러 차등 지불) 형태다.
+      const isWinnerDealer = p.id === dealerIdx;
       for (const other of state.players) {
         if (other.id === p.id) continue;
-        const pay = (other.id === dealerIdx ? r.payments.tsumoDealer : r.payments.tsumoNonDealer) + state.honba * 100;
+        const base = isWinnerDealer ? r.payments.tsumoEach
+          : (other.id === dealerIdx ? r.payments.tsumoDealer : r.payments.tsumoNonDealer);
+        const pay = base + state.honba * 100;
         other.score -= pay;
         p.score += pay;
       }
@@ -632,12 +646,47 @@ function findLastDiscarderIdx() {
   return state.__lastDiscarderIdx;
 }
 
+// 나가시만간: 이번 국 내내 요구패(노두/자패)만 버렸고, 그 버림패가 한 번도 콜당하지 않았으면 성립
+function checkNagashiMangan(player) {
+  if (player.discardCalledAway) return false;
+  if (player.discards.length === 0) return false;
+  return player.discards.every(isTerminalOrHonor);
+}
+
 async function handleExhaustiveDraw() {
+  const nagashiPlayers = state.players.filter(checkNagashiMangan);
   const tenpaiList = state.players.map(p => {
     const counts = countsFromTiles(p.hand);
     return calcShanten(counts, 4 - p.melds.length) === 0;
   });
   const tenpaiCount = tenpaiList.filter(Boolean).length;
+
+  if (nagashiPlayers.length > 0) {
+    // 나가시만간은 쯔모 만관과 동일하게 지불하고, 일반 텐파이/노텐 정산은 건너뛴다
+    for (const p of nagashiPlayers) {
+      const isWinnerDealer = p.id === state.dealerIdx;
+      for (const other of state.players) {
+        if (other.id === p.id) continue;
+        const pay = (isWinnerDealer || other.id === state.dealerIdx)
+          ? Math.ceil(2000 * 2 / 100) * 100
+          : Math.ceil(2000 * 1 / 100) * 100;
+        other.score -= pay;
+        p.score += pay;
+      }
+      logMsg(`${p.name} 나가시만간! (요구패만 버림, 만관)`);
+    }
+    renderAll();
+    await showResultOverlay(nagashiPlayers.map(p => `${p.name} 나가시만간! (만관)`).join('\n'), false, '나가시만간');
+
+    const dealerContinues = tenpaiList[state.dealerIdx] || nagashiPlayers.some(p => p.id === state.dealerIdx);
+    if (dealerContinues) { state.honba += 1; }
+    else { state.dealerIdx = (state.dealerIdx + 1) % 4; state.handNo += 1; state.honba = 0; }
+
+    if (state.handNo > 4 && !dealerContinues) { endGame(); return; }
+    runHand();
+    return;
+  }
+
   logMsg(`유국(더 이상 뽑을 패 없음). 텐파이: ${tenpaiCount}명`);
 
   const table = { 0: [0, 0, 0, 0], 1: [3000, 0, 0, 0], 2: [1500, 1500, 0, 0], 3: [1000, 1000, 1000, 0], 4: [0, 0, 0, 0] };

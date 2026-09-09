@@ -77,7 +77,7 @@ function evaluateHand(ctx) {
   const {
     concealedTiles, melds, winTile, isTsumo, seatWind, roundWind,
     riichi, doubleRiichi, ippatsu, isHaitei, isHoutei, isRinshan, isChankan,
-    doraIndicators, uraDoraIndicators, isDealer
+    doraIndicators, uraDoraIndicators, isDealer, isTenhou, isChiihou
   } = ctx;
 
   const numSetsNeeded = 4 - melds.length;
@@ -187,12 +187,14 @@ function evaluateHand(ctx) {
         const tanyao = allTiles.every(t => t.suit !== 'z' && t.rank !== 1 && t.rank !== 9);
         if (tanyao) { yakuList.push({ name: '탄야오', han: 1 }); han += 1; }
 
-        // 이페이코 (멘젠 한정)
+        // 이페이코 / 랸페이코(二盃口, 이페이코 조합이 2쌍이면 이페이코 대신 랸페이코로 취급, 멘젠 한정)
         if (isMenzen) {
           const seqKeys = d.sets.filter(s => s.type === 'sequence').map(s => `${s.suit}${s.rank}`);
-          const seen = new Set(); let iipeikou = false;
-          for (const k of seqKeys) { if (seen.has(k)) iipeikou = true; seen.add(k); }
-          if (iipeikou) { yakuList.push({ name: '이페이코', han: 1 }); han += 1; }
+          const seqCounts = {};
+          for (const k of seqKeys) seqCounts[k] = (seqCounts[k] || 0) + 1;
+          const duplicatePairs = Object.values(seqCounts).filter(c => c >= 2).length;
+          if (duplicatePairs >= 2) { yakuList.push({ name: '랸페이코', han: 3 }); han += 3; }
+          else if (duplicatePairs === 1) { yakuList.push({ name: '이페이코', han: 1 }); han += 1; }
         }
 
         // 야쿠하이 (역패)
@@ -280,6 +282,8 @@ function evaluateHand(ctx) {
 
         // ---------- 역만 체크 ----------
         let yakuman = 0; const yakumanNames = [];
+        if (isTenhou) { yakumanNames.push('천화'); yakuman++; }
+        if (isChiihou) { yakumanNames.push('지화'); yakuman++; }
         if (dragonSets.length === 3) { yakumanNames.push('다이산겐'); yakuman++; }
         if (ankouCount >= 4) { yakumanNames.push('스우안커우'); yakuman++; }
         if (allTiles.every(t => t.suit === 'z')) { yakumanNames.push('츠이이소우'); yakuman++; }
@@ -289,6 +293,20 @@ function evaluateHand(ctx) {
         const windSets = evaluatedSets.filter(s => (s.type === 'triplet' || s.type === 'quad') && s.suit === 'z' && s.rank <= 4);
         if (windSets.length === 4) { yakumanNames.push('다이스우시이'); yakuman++; }
         else if (windSets.length === 3 && pair.suit === 'z' && pair.rank <= 4) { yakumanNames.push('쇼우스우시이'); yakuman++; }
+        // 구련보등 (한 수트로만 1112345678999 + 그 수트 아무 패나 1장 더)
+        if (usedSuits.size === 1 && !hasHonor) {
+          const suit = [...usedSuits][0];
+          const rankCounts = new Array(10).fill(0);
+          for (const t of allTiles) if (t.suit === suit) rankCounts[t.rank]++;
+          const base = [3, 1, 1, 1, 1, 1, 1, 1, 3];
+          let valid = true, extra = 0;
+          for (let r = 1; r <= 9; r++) {
+            const diff = rankCounts[r] - base[r - 1];
+            if (diff < 0) { valid = false; break; }
+            extra += diff;
+          }
+          if (valid && extra === 1) { yakumanNames.push('구련보등'); yakuman++; }
+        }
 
         if (yakuman > 0) {
           results.push({ yaku: yakumanNames.map(n => ({ name: n, han: 13 })), han: 13 * yakuman, fu: 0, yakuman });
