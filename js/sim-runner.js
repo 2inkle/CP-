@@ -29,6 +29,13 @@ function snapshotStateForDiag() {
 }
 
 function setupSimOverrides() {
+  // 페이지를 새로고침하지 않고 "시작"을 여러 번 누르면 이 함수가 매번 실행되어 이미 감싸놓은
+  // 함수를 또 감싸는(오버라이드가 여러 겹 쌓이는) 문제가 있었다. 각 겹이 sim.wins/handsDone 등을
+  // 똑같이 한 번씩 더 증가시켜 통계가 중복 집계된다(비율은 우연히 맞아떨어지지만 handRecords/
+  // winDetails 같은 원본 배열엔 같은 국이 여러 번 들어간다). 한 페이지 로드당 한 번만 설치한다.
+  if (window.__simOverridesInstalled) return;
+  window.__simOverridesInstalled = true;
+
   window.sleep = () => Promise.resolve();
   window.renderAll = () => {};
   window.renderActionPanel = () => {};
@@ -79,7 +86,14 @@ function setupSimOverrides() {
     const targetWon = winInfos.find(i => i.player.id === sim.targetSeatId);
     const targetDealtIn = (!winInfos[0].isTsumo && discarderIdx === sim.targetSeatId && !targetWon);
 
-    if (targetWon) { sim.wins++; sim.winPoints += targetWon.win.total; sim.winDetails.push({ han: targetWon.win.han, fu: targetWon.win.fu, total: targetWon.win.total, isTsumo: targetWon.isTsumo }); }
+    if (targetWon) {
+      // win.total은 항상 "쯔모라면"의 총합 공식이라 론일 때는 실제로 받는 금액이 아니다.
+      // 실제 정산 규칙(game.js의 resolveWin)과 동일하게 론이면 payments.ron, 쯔모면 total을 쓰고
+      // 혼바 보너스(300점 x 혼바 수)까지 더해야 "실제로 그 국에 거두어들인 점수"가 된다.
+      const actualPoints = (targetWon.isTsumo ? targetWon.win.total : targetWon.win.payments.ron) + state.honba * 300;
+      sim.wins++; sim.winPoints += actualPoints;
+      sim.winDetails.push({ han: targetWon.win.han, fu: targetWon.win.fu, total: actualPoints, isTsumo: targetWon.isTsumo });
+    }
     if (targetDealtIn) sim.dealIns++;
     if (sim.calledThisHand) sim.calledHands++;
 

@@ -123,7 +123,7 @@ function buildAiContext(player) {
   // 2위와 1만점 이상 벌어진 단독 1위
   const hasBigLead = rank === 1 && (player.score - maxOther) >= 10000;
 
-  let memoWaitCount = null, memoWinBase = null;
+  let memoWaitCount = null, memoWinEstimate = null;
 
   const ctx = {
     suitCounts, targetSuit, cutSuit, turnNumber,
@@ -136,6 +136,10 @@ function buildAiContext(player) {
     // 국사무쌍 전용: 실제 국사 샹텐(13종류 요구패 중 몇 종류를 가졌는지 기준). 위 terminalHonorCount와
     // 달리 같은 패를 여러 장 들고 있어도 "종류 수"만 세므로, 국사와 무관한 손패가 잘못 국사로 빠지지 않는다.
     kokushiShanten: shantenKokushi(counts),
+    // 치또이쯔 전용: 실제 치또이 샹텐(7종류 페어 기준, 종류 수 부족 페널티 포함). 아래 pairCount는
+    // "2장 이상인 종류 수"만 볼 뿐 종류 부족/샹텐 비교를 안 해서 과다 트리거를 냈던 값이라
+    // 페르소나 goalRules에서는 이 필드를 대신 쓴다(국사 때와 같은 방식으로 수정).
+    chiitoiShanten: shantenChiitoi(counts),
     pairCount: counts.filter(c => c >= 2).length,
     bodyCount: player.melds.length + countCompleteSets(counts),
 
@@ -165,9 +169,16 @@ function buildAiContext(player) {
       if (memoWaitCount === null) memoWaitCount = countRemainingWaitTiles(player);
       return memoWaitCount;
     },
+    // 실제 정산 점수 기준 예상 타점(리치 제외, 쯔모 총합 기준). 만관=8000(비딜러)/12000(딜러) 등
+    // 실제 게임에서 통용되는 점수 단위 그대로다 (표 단위 base가 아님).
     bestWinBase: () => {
-      if (memoWinBase === null) memoWinBase = estimateBestWinValue(player);
-      return memoWinBase;
+      if (memoWinEstimate === null) memoWinEstimate = estimateBestWinValue(player);
+      return memoWinEstimate.total;
+    },
+    // 위 손패의 역+도라 판수(리치 제외). "역+리치 한 판으로 n판에 도달하는지" 판단에 쓴다.
+    bestWinHan: () => {
+      if (memoWinEstimate === null) memoWinEstimate = estimateBestWinValue(player);
+      return memoWinEstimate.han;
     },
     ankanKeepsTenpai: (opt) => {
       const rest = player.hand.filter(t => !(t.suit === opt.suit && t.rank === opt.rank));
@@ -179,18 +190,19 @@ function buildAiContext(player) {
   // 후로만으로 threatLevel이 2까지 올라갈 수 있는데, 그것만으로 전면 오리를 시키면
   // "리치처럼 확정적인 위험에만 접는다"는 의도보다 훨씬 자주(거의 매 국) 접게 되어 버린다.
   const hasRiichiThreat = riichiOpponents.length > 0;
-  // 위험도-가치 비교: 손패 가치(bestWinBase(), 역 없으면 0)와 대기 폭(waitTileCount())을
-  // 위협 수준과 함께 저울질한다. 하네만급 이상(8000)은 위협이 있어도 계속 밀고, 만관 미만(2000)
-  // + 좁은 대기(3장 이하) 조합만 텐파이에서도 접는다.
+  // 위험도-가치 비교: 손패 가치(bestWinBase(), 실제 정산 점수 기준·역 없으면 0)와 대기 폭
+  // (waitTileCount())을 위협 수준과 함께 저울질한다. 하네만급 이상(12000, 비딜러 쯔모 총합
+  // 기준)은 위협이 있어도 계속 밀고, 만관 미만(8000) + 좁은 대기(3장 이하) 조합만 텐파이에서도
+  // 접는다.
   ctx.shouldFold = () => {
     if (hasRiichiThreat && ctx.ownShanten >= 2) return true;
     if (hasRiichiThreat && ctx.ownShanten === 1 && ctx.threatLevel >= 2) {
-      if (ctx.bestWinBase() >= 8000) return false;
+      if (ctx.bestWinBase() >= 12000) return false;
       return true;
     }
     if (ctx.ownShanten === 0) {
       if (ctx.waitTileCount() <= 1) return true;
-      if (hasRiichiThreat && ctx.threatLevel >= 2 && ctx.bestWinBase() < 2000 && ctx.waitTileCount() <= 3) return true;
+      if (hasRiichiThreat && ctx.threatLevel >= 2 && ctx.bestWinBase() < 8000 && ctx.waitTileCount() <= 3) return true;
     }
     return false;
   };
@@ -273,19 +285,22 @@ function visibleCountOf(tile, player) {
 }
 
 // 텐파이 손패를 실제 대기패로 화료시켜 봤을 때 나오는 최대 타점(base, 만관=2000)
+// 실제로 화료했을 때 거두어들이게 될 점수(쯔모 총합 기준 total)와 그 손패의 역+도라 판수(han,
+// 리치 제외)를 함께 추정한다. best.total이 "타점"의 기준값 — 표 단위(base, 만관=2000 등)가
+// 아니라 실제 정산 점수(만관=8000/12000 등)라 다른 스탯(평균타점 등)과 같은 단위로 비교 가능하다.
 function estimateBestWinValue(player) {
   const numSetsNeeded = 4 - player.melds.length;
-  let bestBase = 0;
+  let best = { total: 0, han: 0, fu: 0 };
   for (let i = 0; i < player.hand.length; i++) {
     const kept = player.hand.slice(0, i).concat(player.hand.slice(i + 1));
     if (calcShanten(countsFromTiles(kept), numSetsNeeded) !== 0) continue;
     for (const w of findWaitTiles(kept, numSetsNeeded)) {
       const winTile = makeTile(w.suit, w.rank);
       const r = wouldWin(player, winTile, true, { riichi: false }, kept);
-      if (r && r.base > bestBase) bestBase = r.base;
+      if (r && r.total > best.total) best = { total: r.total, han: r.han, fu: r.fu };
     }
   }
-  return bestBase;
+  return best;
 }
 
 function wouldWin(player, tile, isTsumo, extra = {}, handTiles = null) {

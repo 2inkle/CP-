@@ -110,7 +110,12 @@ const PERSONAS = [
       // 실전에서 거의 매 국 걸려버려 국사만 쫓다 보통 손패로는 절대 화료를 못 하게 만드는
       // 버그성 결과를 냈다. 국사 샹텐이 표준형 샹텐보다 뚜렷이 앞설 때만 갈아탄다.
       { when: (c) => c.kokushiShanten <= 3 && c.kokushiShanten <= c.ownShanten, decision: 'kokushi' },
-      { when: (c) => c.pairCount >= 3 && c.bodyCount < 2, decision: 'chiitoi' },
+      // 치또이쯔도 국사와 같은 이유로 실제 치또이 샹텐(chiitoiShanten) 기준으로 바꿨다.
+      // 예전 기준(pairCount >= 3, "2장 이상인 종류가 3개")은 표준형 샹텐과 비교를 안 해서
+      // 흔한 손패에서도 걸핏하면 치또이 모드로 전환돼(로그 확인 결과 과다 트리거) 정작 표준형으로
+      // 더 잘 풀리는 손패까지 치또이로 몰아가는 문제가 있었다. 국사 때처럼 "치또이가 표준형보다
+      // 실제로 더 유리할 때만" 전환한다.
+      { when: (c) => c.chiitoiShanten <= 3 && c.chiitoiShanten <= c.ownShanten && c.bodyCount < 2, decision: 'chiitoi' },
       { when: (c) => c.isBehind && c.terminalHonorCount <= 2, decision: 'tanyao' },
       { when: (c) => c.isBehind && c.terminalHonorCount <= 5, decision: 'chanta' }
     ],
@@ -165,7 +170,9 @@ const PERSONAS = [
     riichiRules: [
       { when: (c) => c.goal === 'fold' || c.goal === 'cautious', decision: 'dama' },
       { when: (c) => c.anyOpponentRiichi, decision: 'chase' },   // 추격리치 (아래 만관 규칙을 가로챔)
-      { when: (c) => c.bestWinBase() <= 2000, decision: 'dama' } // 만관 이하 → 보류하고 더 키움
+      // 역(도라 포함, 리치 제외)의 판수 + 리치 한 판을 더해 4판(하네만권)에 못 미치면 보류하고
+      // 계속 손패를 키운다. 4판 이상이면 그 순간 리치를 걸어 확정짓는다.
+      { when: (c) => (c.bestWinHan() + 1) < 4, decision: 'dama' }
     ],
 
     // 텐파이에서 안깡해도 텐파이가 유지되면(=영상개화 가능) 즉시 깡, 그 외엔 절대 안 함
