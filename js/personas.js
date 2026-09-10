@@ -165,9 +165,12 @@ const PERSONAS = [
       { when: (c, t) => c.goal === 'normal' && c.countInHand(t) === 1 && t.suit !== 'z' && c.hasAdjacentInHand(t), weight: 4 },
       { when: (c, t, resultShanten) => c.goal === 'normal' && t.suit === 'z'
           && isYakuhaiTile(t.suit, t.rank, c.seatWind, c.roundWind) && resultShanten > 0, weight: -5 },
-      // 2장 이상 버려진 역패 = 절대 안전패 → 품고 있다가 텐파이 성립 순간 방출
-      { when: (c, t, resultShanten) => c.goal === 'normal' && t.suit === 'z'
-          && isYakuhaiTile(t.suit, t.rank, c.seatWind, c.roundWind)
+      // 위험 상황(threatLevel >= 1)에서 이미 2장 이상 버려진 자패가 손에 들어오면 역패 여부와
+      // 무관하게 절대 안전패로 보고 비축했다가 텐파이 성립 순간 방출한다. 위험하지 않을 때는
+      // 굳이 쥐고 있을 이유가 없어(위 -5 역패 선호나 손패 효율에 맡기면 됨) 위험 상황으로만
+      // 한정했고, "역패"가 아니라 "자패" 전체로 넓힌 것은 위험할 때는 역 여부보다 방총 회피가
+      // 우선이기 때문이다(손님 바람패도 2장 이상 버려졌으면 역패와 마찬가지로 사실상 안전패).
+      { when: (c, t, resultShanten) => c.goal === 'normal' && c.threatLevel >= 1 && t.suit === 'z'
           && c.discardedCountOf(t) >= 2 && resultShanten > 0, weight: -12 }
       // 수비 규칙 없음 → 오리 모드가 아닌 한 위험패도 그대로 민다
     ],
