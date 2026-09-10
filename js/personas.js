@@ -102,7 +102,18 @@ const PERSONAS = [
 
     // ---- 이번 턴에 노릴 목표 (위에서부터 먼저 걸리는 것) ----
     goalRules: [
-      { when: (c) => c.threatLevel >= 1 && c.shouldFold(), decision: 'fold' },
+      // 형식텐파이: 패산이 거의 안 남았으면 노텐 벌부는 확정 손실인데 상대가 화료할 턴은 얼마
+      // 남지 않았다. 텐파이/1샹텐이면 오리를 풀고 텐파이 성립·유지를 노린다(아래 상시 수비
+      // 가중치가 남아 있어 같은 값이면 여전히 안전패를 고른다).
+      { when: (c) => c.wallRemaining <= 16 && c.ownShanten <= 1, decision: 'normal' },
+      // 완전 포기(배타오리)는 정말 가망이 없을 때만: 3샹텐 이상이거나, 순목이 늦었거나(9순 이후),
+      // 텐파이인데 shouldFold()가 걸린 경우(=대기가 죽었거나 타점이 없는 텐파이).
+      { when: (c) => c.threatLevel >= 1 && c.shouldFold()
+          && (c.ownShanten >= 3 || c.turnNumber >= 9 || c.ownShanten === 0), decision: 'fold' },
+      // 그 사이 구간(주로 이른 순목의 1~2샹텐 + 리치 상대)은 반오리: 손패를 통째로 버리지는
+      // 않되 안전패를 우선한다. 예전엔 이 구간까지 전부 전면 후퇴라 전체 국의 40% 이상을
+      // 스스로 포기했고, 그게 화료율을 가장 크게 깎고 있었다.
+      { when: (c) => c.threatLevel >= 1 && c.shouldFold(), decision: 'guard' },
       // 큰 격차 1위 + 위협 감지 → 손패를 키우기보다 안전패를 우선 (공격성 저하)
       { when: (c) => c.hasBigLead && c.threatLevel >= 1, decision: 'cautious' },
       // 국사무쌍은 진짜로 가까울 때만 노린다. 무작위 13장 손패도 우연히 요구패 종류가 평균
@@ -110,12 +121,11 @@ const PERSONAS = [
       // 실전에서 거의 매 국 걸려버려 국사만 쫓다 보통 손패로는 절대 화료를 못 하게 만드는
       // 버그성 결과를 냈다. 국사 샹텐이 표준형 샹텐보다 뚜렷이 앞설 때만 갈아탄다.
       { when: (c) => c.kokushiShanten <= 3 && c.kokushiShanten <= c.ownShanten, decision: 'kokushi' },
-      // 치또이쯔도 국사와 같은 이유로 실제 치또이 샹텐(chiitoiShanten) 기준으로 바꿨다.
-      // 예전 기준(pairCount >= 3, "2장 이상인 종류가 3개")은 표준형 샹텐과 비교를 안 해서
-      // 흔한 손패에서도 걸핏하면 치또이 모드로 전환돼(로그 확인 결과 과다 트리거) 정작 표준형으로
-      // 더 잘 풀리는 손패까지 치또이로 몰아가는 문제가 있었다. 국사 때처럼 "치또이가 표준형보다
-      // 실제로 더 유리할 때만" 전환한다.
-      { when: (c) => c.chiitoiShanten <= 3 && c.chiitoiShanten <= c.ownShanten && c.bodyCount < 2, decision: 'chiitoi' },
+      // 치또이쯔도 국사와 같은 이유로 실제 치또이 샹텐 기준으로 판단한다. 예전 기준
+      // (pairCount >= 3, "2장 이상인 종류가 3개")은 표준형 샹텐과 비교를 안 해서 흔한 손패도
+      // 걸핏하면 치또이로 전환시켰다. 치또이는 7종류 페어가 필요한 느린 손패라 동률로는 부족하고
+      // "표준형보다 확실히 앞설 때"(<=2)만 갈아탄다 — A/B 실측에서도 <=3보다 우세했다.
+      { when: (c) => c.chiitoiShanten <= 2 && c.chiitoiShanten <= c.ownShanten && c.bodyCount < 2, decision: 'chiitoi' },
       { when: (c) => c.isBehind && c.terminalHonorCount <= 2, decision: 'tanyao' },
       { when: (c) => c.isBehind && c.terminalHonorCount <= 5, decision: 'chanta' }
     ],
@@ -131,8 +141,27 @@ const PERSONAS = [
       { when: (c, t) => c.goal === 'cautious' && c.threatDangerFor(t) === 1, weight: 20 },
       { when: (c, t) => c.goal === 'cautious' && c.threatDangerFor(t) === 2, weight: -45 },
 
+      // ===== 반오리(guard): 손패는 살리되 안전을 위해 샹텐 1까지는 양보 =====
+      // 안전패 +10 / 위험패 -10 조합은 SHANTEN_PENALTY(15)보다 크고 2배(30)보다 작다 →
+      // "샹텐 1 손해를 감수하고 안전패를 버리는 것"까지는 하되 2 손해는 보지 않는다.
+      { when: (c, t) => c.goal === 'guard' && c.threatDangerFor(t) === 0, weight: 10 },
+      { when: (c, t) => c.goal === 'guard' && c.threatDangerFor(t) === 1, weight: 4 },
+      { when: (c, t) => c.goal === 'guard' && c.threatDangerFor(t) === 2, weight: -10 },
+
+      // ===== 밀 때의 상시 약한 수비(표준형의 PUSH_FOLD_RULES와 같은 취지) =====
+      // 합이 SHANTEN_PENALTY(15)보다 작아(5+5=10) 샹텐·우케이레를 절대 깎지 않고,
+      // "효율이 같은 후보들 사이에서만" 안전한 쪽으로 기운다. 기존엔 오리 모드가 아니면
+      // 위험도를 아예 안 봐서, 미는 동안 방총을 줄일 수단이 전혀 없었다.
+      { when: (c, t) => c.goal !== 'fold' && c.goal !== 'cautious' && c.goal !== 'guard'
+          && c.threatLevel >= 1 && c.threatDangerFor(t) === 0, weight: 5 },
+      { when: (c, t) => c.goal !== 'fold' && c.goal !== 'cautious' && c.goal !== 'guard'
+          && c.threatLevel >= 1 && c.threatDangerFor(t) === 2, weight: -5 },
+
       // ===== 깡을 하지 않고 4장을 그대로 들고 간다 =====
-      { when: (c, t) => c.goal !== 'fold' && c.countInHand(t) === 4, weight: -25 },
+      // -25는 SHANTEN_PENALTY(15)를 넘어 샹텐을 희생하면서까지 4장을 쥐게 만들었다. 텐파이가
+      // 되면 어차피 kanRules가 깡을 하므로, 그 전에 손패 효율까지 깎을 이유는 없다 → -12로 낮춰
+      // "효율이 같을 때만 4장을 유지"하는 버릇으로 남긴다.
+      { when: (c, t) => c.goal !== 'fold' && c.countInHand(t) === 4, weight: -12 },
 
       // ===== 국사무쌍 =====
       { when: (c, t) => c.goal === 'kokushi' && c.ownShanten > 0 && !isTerminalOrHonor(t), weight: 60 },
@@ -155,12 +184,13 @@ const PERSONAS = [
       // ===== 기본형: 절일문 + 커쯔 우선 + 역패 =====
       // 텐파이가 아닐 때만 강제한다 (텐파이는 절대 깨지 않음). 절일문 자체가 목적이 아니라
       // 손패를 정리하는 수단이므로, ① 이미 완성된 몸통(커쯔/슌쯔)은 그 수트라도 건드리지 않고
-      // ② 이 버림으로 샹텐이 최선(ownShanten)보다 나빠지는 경우엔 가중치를 주지 않는다
-      // (SHANTEN_PENALTY를 웃도는 가중치로 억지로 샹텐을 희생해가며 수트를 끊는 것을 막는다).
+      // ② 이 버림으로 샹텐이 최선(ownShanten)보다 나빠지면 가중치를 주지 않는다.
+      // 가중치도 누적 20에서 8로 낮췄다 — 우케이레(대기 폭) 보정이 장당 0.5점이라 20 앞에서는
+      // 늘 무시됐기 때문이다. A/B 실측: 유국텐파이 47.3% -> 58.0%, 화료율 16.1% -> 17.2%.
       { when: (c, t, resultShanten) => c.goal === 'normal' && c.ownShanten > 0 && t.suit === c.cutSuit
-          && !c.isPartOfCompleteSet(t) && resultShanten <= c.ownShanten, weight: 10 },
+          && !c.isPartOfCompleteSet(t) && resultShanten <= c.ownShanten, weight: 5 },
       { when: (c, t, resultShanten) => c.goal === 'normal' && c.ownShanten > 0 && t.suit === c.cutSuit
-          && c.suitCounts[c.cutSuit] <= 3 && !c.isPartOfCompleteSet(t) && resultShanten <= c.ownShanten, weight: 10 },
+          && c.suitCounts[c.cutSuit] <= 3 && !c.isPartOfCompleteSet(t) && resultShanten <= c.ownShanten, weight: 3 },
       { when: (c, t) => c.goal === 'normal' && c.countInHand(t) >= 2, weight: -6 },
       { when: (c, t) => c.goal === 'normal' && c.countInHand(t) === 1 && t.suit !== 'z' && c.hasAdjacentInHand(t), weight: 4 },
       { when: (c, t, resultShanten) => c.goal === 'normal' && t.suit === 'z'
@@ -178,6 +208,10 @@ const PERSONAS = [
     riichiRules: [
       { when: (c) => c.goal === 'fold' || c.goal === 'cautious', decision: 'dama' },
       { when: (c) => c.anyOpponentRiichi, decision: 'chase' },   // 추격리치 (아래 만관 규칙을 가로챔)
+      // 역이 하나도 없는 텐파이(bestWinHan() === 0)는 다마로는 화료 자체가 불가능하다.
+      // "타점이 모일 때까지 기다린다"는 아래 규칙을 그대로 적용하면 영영 리치를 못 걸고
+      // 텐파이인 채로 유국까지 가버리므로, 이 경우엔 판수와 무관하게 무조건 리치를 건다.
+      { when: (c) => c.bestWinHan() === 0, decision: 'riichi' },
       // 역(도라 포함, 리치 제외)의 판수 + 리치 한 판을 더해 4판(하네만권)에 못 미치면 보류하고
       // 계속 손패를 키운다. 4판 이상이면 그 순간 리치를 걸어 확정짓는다.
       { when: (c) => (c.bestWinHan() + 1) < 4, decision: 'dama' }
@@ -191,6 +225,9 @@ const PERSONAS = [
 
     callRules: [
       { when: (c) => c.goal === 'fold' || c.goal === 'cautious', decision: 'pass' },
+      // 반오리 중에는 샹텐이 확실히 줄어드는 콜만 받는다(그래야 텐파이까지 가서 다시 밀 수 있다)
+      { when: (c) => c.goal === 'guard' && c.resultShanten < c.ownShanten, decision: 'call' },
+      { when: (c) => c.goal === 'guard', decision: 'pass' },
       // 몸통 2개 이상 + 퐁 기회 → 치또이를 버리고서라도 적극 후로
       { when: (c) => c.bodyCount >= 2 && c.callType === 'pon' && c.resultShanten <= c.ownShanten, decision: 'call' },
       { when: (c) => c.goal === 'kokushi' || c.goal === 'chiitoi', decision: 'pass' },

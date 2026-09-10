@@ -118,8 +118,10 @@ function buildAiContext(player) {
 
   const rank = 1 + state.players.filter(p => p.score > player.score).length;
   const maxOther = Math.max(...opponents.map(p => p.score));
-  // 4위이거나, 1등이 아니면서 18000점 미만이면 불리한 상황
-  const isBehind = rank === 4 || (rank !== 1 && player.score < 18000);
+  // 점수 불리 판정(서가을의 탕야오/대요구 전환 트리거). 예전 기준(4위이거나 1등이 아니면서
+  // 18000점 미만)은 東風戦 첫 국부터 거의 매 국 걸려서, 느리고 싼 대요구/탕야오 손패로 자주
+  // 갈아타게 만들었다(500국 중 95국). 만회가 실제로 급한 상황으로 좁힌다.
+  const isBehind = (rank === 4 && state.handNo >= 3) || player.score < 15000;
   // 2위와 1만점 이상 벌어진 단독 1위
   const hasBigLead = rank === 1 && (player.score - maxOther) >= 10000;
 
@@ -127,6 +129,8 @@ function buildAiContext(player) {
 
   const ctx = {
     suitCounts, targetSuit, cutSuit, turnNumber,
+    // 남은 패산 장수 — 형식텐파이(막판엔 노텐 벌부가 확정 손실) 판단에 쓴다
+    wallRemaining: state.wall.length,
     seatWind: seatWindOf(player.id), roundWind: state.roundWind,
     anyOpponentRiichi: riichiOpponents.length > 0,
     dragonPairCount: counts.slice(31, 34).filter(c => c >= 2).length,
