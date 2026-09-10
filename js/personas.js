@@ -153,9 +153,14 @@ const PERSONAS = [
       { when: (c, t) => c.goal === 'chanta' && c.ownShanten > 0 && isTerminalOrHonor(t), weight: -20 },
 
       // ===== 기본형: 절일문 + 커쯔 우선 + 역패 =====
-      // 텐파이가 아닐 때만 강제한다 (텐파이는 절대 깨지 않음)
-      { when: (c, t) => c.goal === 'normal' && c.ownShanten > 0 && t.suit === c.cutSuit, weight: 10 },
-      { when: (c, t) => c.goal === 'normal' && c.ownShanten > 0 && t.suit === c.cutSuit && c.suitCounts[c.cutSuit] <= 3, weight: 10 },
+      // 텐파이가 아닐 때만 강제한다 (텐파이는 절대 깨지 않음). 절일문 자체가 목적이 아니라
+      // 손패를 정리하는 수단이므로, ① 이미 완성된 몸통(커쯔/슌쯔)은 그 수트라도 건드리지 않고
+      // ② 이 버림으로 샹텐이 최선(ownShanten)보다 나빠지는 경우엔 가중치를 주지 않는다
+      // (SHANTEN_PENALTY를 웃도는 가중치로 억지로 샹텐을 희생해가며 수트를 끊는 것을 막는다).
+      { when: (c, t, resultShanten) => c.goal === 'normal' && c.ownShanten > 0 && t.suit === c.cutSuit
+          && !c.isPartOfCompleteSet(t) && resultShanten <= c.ownShanten, weight: 10 },
+      { when: (c, t, resultShanten) => c.goal === 'normal' && c.ownShanten > 0 && t.suit === c.cutSuit
+          && c.suitCounts[c.cutSuit] <= 3 && !c.isPartOfCompleteSet(t) && resultShanten <= c.ownShanten, weight: 10 },
       { when: (c, t) => c.goal === 'normal' && c.countInHand(t) >= 2, weight: -6 },
       { when: (c, t) => c.goal === 'normal' && c.countInHand(t) === 1 && t.suit !== 'z' && c.hasAdjacentInHand(t), weight: 4 },
       { when: (c, t, resultShanten) => c.goal === 'normal' && t.suit === 'z'
