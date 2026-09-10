@@ -266,7 +266,7 @@ function startSim() {
     targetSeatId: 0, targetPersonaId, targetHands, oppMode,
     fixedOpponents: ['standard', 'standard', 'standard'],
     handsDone: 0, gamesDone: 0,
-    wins: 0, winPoints: 0, dealIns: 0, calledHands: 0, calledThisHand: false,
+    wins: 0, winPoints: 0, winDetails: [], dealIns: 0, calledHands: 0, calledThisHand: false,
     callOpportunities: 0, callsTaken: 0,
     firstPlaceGames: 0, ranks: [],
     drawCount: 0, drawTenpaiCount: 0,

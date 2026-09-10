@@ -179,10 +179,19 @@ function buildAiContext(player) {
   // 후로만으로 threatLevel이 2까지 올라갈 수 있는데, 그것만으로 전면 오리를 시키면
   // "리치처럼 확정적인 위험에만 접는다"는 의도보다 훨씬 자주(거의 매 국) 접게 되어 버린다.
   const hasRiichiThreat = riichiOpponents.length > 0;
+  // 위험도-가치 비교: 손패 가치(bestWinBase(), 역 없으면 0)와 대기 폭(waitTileCount())을
+  // 위협 수준과 함께 저울질한다. 하네만급 이상(8000)은 위협이 있어도 계속 밀고, 만관 미만(2000)
+  // + 좁은 대기(3장 이하) 조합만 텐파이에서도 접는다.
   ctx.shouldFold = () => {
     if (hasRiichiThreat && ctx.ownShanten >= 2) return true;
-    if (hasRiichiThreat && ctx.ownShanten === 1 && ctx.threatLevel >= 2) return true;
-    if (ctx.ownShanten === 0 && ctx.waitTileCount() <= 1) return true;
+    if (hasRiichiThreat && ctx.ownShanten === 1 && ctx.threatLevel >= 2) {
+      if (ctx.bestWinBase() >= 8000) return false;
+      return true;
+    }
+    if (ctx.ownShanten === 0) {
+      if (ctx.waitTileCount() <= 1) return true;
+      if (hasRiichiThreat && ctx.threatLevel >= 2 && ctx.bestWinBase() < 2000 && ctx.waitTileCount() <= 3) return true;
+    }
     return false;
   };
 
