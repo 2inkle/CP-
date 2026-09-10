@@ -184,6 +184,11 @@ function buildAiContext(player) {
       if (memoWinEstimate === null) memoWinEstimate = estimateBestWinValue(player);
       return memoWinEstimate.han;
     },
+    // 론으로 화료했을 때의 판수. 0이면 다마로는 론을 못 받는 손패(=리치가 필수)다.
+    bestWinHanOnRon: () => {
+      if (memoWinEstimate === null) memoWinEstimate = estimateBestWinValue(player);
+      return memoWinEstimate.hanOnRon;
+    },
     ankanKeepsTenpai: (opt) => {
       const rest = player.hand.filter(t => !(t.suit === opt.suit && t.rank === opt.rank));
       return calcShanten(countsFromTiles(rest), numSetsNeeded - 1) === 0;
@@ -201,6 +206,9 @@ function buildAiContext(player) {
   ctx.shouldFold = () => {
     if (hasRiichiThreat && ctx.ownShanten >= 2) return true;
     if (hasRiichiThreat && ctx.ownShanten === 1 && ctx.threatLevel >= 2) {
+      // NOTE: bestWinBase()는 텐파이 후보가 있을 때만 값이 나오므로 1샹텐에서는 항상 0이다
+      // → 이 가치 비교는 사실상 동작하지 않는 죽은 조건이다. 1샹텐에서도 의미 있는 가치
+      // 지표(도라 수 등)로 바꾸려면 별도 측정이 필요해서 일단 그대로 둔다.
       if (ctx.bestWinBase() >= 12000) return false;
       return true;
     }
@@ -288,20 +296,25 @@ function visibleCountOf(tile, player) {
   return Math.min(seen, 4);
 }
 
-// 텐파이 손패를 실제 대기패로 화료시켜 봤을 때 나오는 최대 타점(base, 만관=2000)
 // 실제로 화료했을 때 거두어들이게 될 점수(쯔모 총합 기준 total)와 그 손패의 역+도라 판수(han,
 // 리치 제외)를 함께 추정한다. best.total이 "타점"의 기준값 — 표 단위(base, 만관=2000 등)가
 // 아니라 실제 정산 점수(만관=8000/12000 등)라 다른 스탯(평균타점 등)과 같은 단위로 비교 가능하다.
+//
+// hanOnRon은 같은 손패를 "론으로" 화료했을 때의 판수다. han(쯔모 기준)은 멘젠쯔모 1판을 포함해서
+// 세므로, 역이 멘젠쯔모뿐인 손패도 han=1로 잡힌다 — 그런 손패는 론으로는 역이 없어 화료 자체가
+// 불가능하다. "다마로 화료할 수 있는 손패인가"는 반드시 hanOnRon으로 판단해야 한다.
 function estimateBestWinValue(player) {
   const numSetsNeeded = 4 - player.melds.length;
-  let best = { total: 0, han: 0, fu: 0 };
+  let best = { total: 0, han: 0, fu: 0, hanOnRon: 0 };
   for (let i = 0; i < player.hand.length; i++) {
     const kept = player.hand.slice(0, i).concat(player.hand.slice(i + 1));
     if (calcShanten(countsFromTiles(kept), numSetsNeeded) !== 0) continue;
     for (const w of findWaitTiles(kept, numSetsNeeded)) {
       const winTile = makeTile(w.suit, w.rank);
       const r = wouldWin(player, winTile, true, { riichi: false }, kept);
-      if (r && r.total > best.total) best = { total: r.total, han: r.han, fu: r.fu };
+      if (r && r.total > best.total) best = { ...best, total: r.total, han: r.han, fu: r.fu };
+      const ron = wouldWin(player, winTile, false, { riichi: false }, kept);
+      if (ron && ron.han > best.hanOnRon) best.hanOnRon = ron.han;
     }
   }
   return best;

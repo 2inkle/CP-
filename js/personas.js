@@ -108,6 +108,7 @@ const PERSONAS = [
       { when: (c) => c.wallRemaining <= 16 && c.ownShanten <= 1, decision: 'normal' },
       // 완전 포기(배타오리)는 정말 가망이 없을 때만: 3샹텐 이상이거나, 순목이 늦었거나(9순 이후),
       // 텐파이인데 shouldFold()가 걸린 경우(=대기가 죽었거나 타점이 없는 텐파이).
+      // (문턱을 11순까지 늦춰본 결과 방총률이 12.9% -> 15.2%로 뛰어 9순으로 되돌렸다.)
       { when: (c) => c.threatLevel >= 1 && c.shouldFold()
           && (c.ownShanten >= 3 || c.turnNumber >= 9 || c.ownShanten === 0), decision: 'fold' },
       // 그 사이 구간(주로 이른 순목의 1~2샹텐 + 리치 상대)은 반오리: 손패를 통째로 버리지는
@@ -127,7 +128,10 @@ const PERSONAS = [
       // "표준형보다 확실히 앞설 때"(<=2)만 갈아탄다 — A/B 실측에서도 <=3보다 우세했다.
       { when: (c) => c.chiitoiShanten <= 2 && c.chiitoiShanten <= c.ownShanten && c.bodyCount < 2, decision: 'chiitoi' },
       { when: (c) => c.isBehind && c.terminalHonorCount <= 2, decision: 'tanyao' },
-      { when: (c) => c.isBehind && c.terminalHonorCount <= 5, decision: 'chanta' }
+      // 대요구는 요구패가 실제로 넉넉할 때(4장 이상)만. 예전 기준(<=5)은 요구패가 3장뿐인
+      // 손패까지 끌어들였는데, 실측에서 대요구는 화료율 12.2%/방총률 29.3%로 두 지표 모두
+      // 최악이었다(normal은 21.5%/11.7%). 애매한 손패는 기본형으로 두는 편이 낫다.
+      { when: (c) => c.isBehind && c.terminalHonorCount >= 4 && c.terminalHonorCount <= 5, decision: 'chanta' }
     ],
 
     discardRules: [
@@ -141,12 +145,13 @@ const PERSONAS = [
       { when: (c, t) => c.goal === 'cautious' && c.threatDangerFor(t) === 1, weight: 20 },
       { when: (c, t) => c.goal === 'cautious' && c.threatDangerFor(t) === 2, weight: -45 },
 
-      // ===== 반오리(guard): 손패는 살리되 안전을 위해 샹텐 1까지는 양보 =====
-      // 안전패 +10 / 위험패 -10 조합은 SHANTEN_PENALTY(15)보다 크고 2배(30)보다 작다 →
-      // "샹텐 1 손해를 감수하고 안전패를 버리는 것"까지는 하되 2 손해는 보지 않는다.
-      { when: (c, t) => c.goal === 'guard' && c.threatDangerFor(t) === 0, weight: 10 },
-      { when: (c, t) => c.goal === 'guard' && c.threatDangerFor(t) === 1, weight: 4 },
-      { when: (c, t) => c.goal === 'guard' && c.threatDangerFor(t) === 2, weight: -10 },
+      // ===== 반오리(guard): 손패는 살리되 안전패를 강하게 우선 =====
+      // 안전패 +7 / 위험패 -7의 합(14)은 SHANTEN_PENALTY(15) 바로 아래다 → 같은 샹텐끼리는
+      // 거의 항상 안전한 쪽을 고르지만, 샹텐을 희생하면서까지 안전패를 버리지는 않는다.
+      // (±10이면 샹텐 1을 내주는데, 그러면 반오리에 들어간 손패가 좀처럼 살아나지 못했다.)
+      { when: (c, t) => c.goal === 'guard' && c.threatDangerFor(t) === 0, weight: 7 },
+      { when: (c, t) => c.goal === 'guard' && c.threatDangerFor(t) === 1, weight: 3 },
+      { when: (c, t) => c.goal === 'guard' && c.threatDangerFor(t) === 2, weight: -7 },
 
       // ===== 밀 때의 상시 약한 수비(표준형의 PUSH_FOLD_RULES와 같은 취지) =====
       // 합이 SHANTEN_PENALTY(15)보다 작아(5+5=10) 샹텐·우케이레를 절대 깎지 않고,
@@ -178,7 +183,12 @@ const PERSONAS = [
       { when: (c, t) => c.goal === 'tanyao' && c.ownShanten > 0 && !isTerminalOrHonor(t), weight: -5 },
 
       // ===== 대요구 계열 (점수 불리 + 요구패가 많을 때) =====
-      { when: (c, t) => c.goal === 'chanta' && c.ownShanten > 0 && t.suit !== 'z' && t.rank >= 4 && t.rank <= 6, weight: 30 },
+      // 중장패 강제 방출은 위험도 판정을 통과한 패에만 적용한다. 이 가중치(30)는 상시 수비(±5)를
+      // 압도하는데, 하필 4·5·6은 리치 상대에게 가장 위험한 패라 그대로 두면 "느린데 위험하기까지 한"
+      // 모드가 된다 — 실측에서 대요구는 화료율 12.2%(normal 21.5%)에 방총률 29.3%(normal 11.7%)로
+      // 두 지표 모두 최악이었다.
+      { when: (c, t) => c.goal === 'chanta' && c.ownShanten > 0 && t.suit !== 'z' && t.rank >= 4 && t.rank <= 6
+          && c.threatDangerFor(t) < 2, weight: 30 },
       { when: (c, t) => c.goal === 'chanta' && c.ownShanten > 0 && isTerminalOrHonor(t), weight: -20 },
 
       // ===== 기본형: 절일문 + 커쯔 우선 + 역패 =====
@@ -192,7 +202,9 @@ const PERSONAS = [
       { when: (c, t, resultShanten) => c.goal === 'normal' && c.ownShanten > 0 && t.suit === c.cutSuit
           && c.suitCounts[c.cutSuit] <= 3 && !c.isPartOfCompleteSet(t) && resultShanten <= c.ownShanten, weight: 3 },
       { when: (c, t) => c.goal === 'normal' && c.countInHand(t) >= 2, weight: -6 },
-      { when: (c, t) => c.goal === 'normal' && c.countInHand(t) === 1 && t.suit !== 'z' && c.hasAdjacentInHand(t), weight: 4 },
+      // 커쯔 우선(연결패 단독을 먼저 버림)은 슌쯔보다 느린 형태를 택하는 효율 세금이라 +4에서
+      // +2로 낮췄다 — 성향으로는 남기되 대기 폭 차이를 뒤집을 만큼은 아니게.
+      { when: (c, t) => c.goal === 'normal' && c.countInHand(t) === 1 && t.suit !== 'z' && c.hasAdjacentInHand(t), weight: 2 },
       { when: (c, t, resultShanten) => c.goal === 'normal' && t.suit === 'z'
           && isYakuhaiTile(t.suit, t.rank, c.seatWind, c.roundWind) && resultShanten > 0, weight: -5 },
       // 위험 상황(threatLevel >= 1)에서 이미 2장 이상 버려진 자패가 손에 들어오면 역패 여부와
@@ -208,10 +220,10 @@ const PERSONAS = [
     riichiRules: [
       { when: (c) => c.goal === 'fold' || c.goal === 'cautious', decision: 'dama' },
       { when: (c) => c.anyOpponentRiichi, decision: 'chase' },   // 추격리치 (아래 만관 규칙을 가로챔)
-      // 역이 하나도 없는 텐파이(bestWinHan() === 0)는 다마로는 화료 자체가 불가능하다.
-      // "타점이 모일 때까지 기다린다"는 아래 규칙을 그대로 적용하면 영영 리치를 못 걸고
-      // 텐파이인 채로 유국까지 가버리므로, 이 경우엔 판수와 무관하게 무조건 리치를 건다.
-      { when: (c) => c.bestWinHan() === 0, decision: 'riichi' },
+      // 론으로 받을 역이 없는 텐파이는 다마로 두면 쯔모밖에 화료 수단이 없다(역이 아예 없으면
+      // 그마저도 불가능). 아래 "타점이 모일 때까지 기다린다"를 그대로 적용하면 화료 기회를
+      // 대부분 스스로 버리는 셈이라, 이 경우엔 판수와 무관하게 무조건 리치를 건다.
+      { when: (c) => c.bestWinHanOnRon() === 0, decision: 'riichi' },
       // 역(도라 포함, 리치 제외)의 판수 + 리치 한 판을 더해 4판(하네만권)에 못 미치면 보류하고
       // 계속 손패를 키운다. 4판 이상이면 그 순간 리치를 걸어 확정짓는다.
       { when: (c) => (c.bestWinHan() + 1) < 4, decision: 'dama' }
