@@ -165,6 +165,8 @@ function setupSimOverrides() {
       const seats = [0, 1, 2].map(() => pool[Math.floor(Math.random() * pool.length)]);
       // targetSeatId(보통 0)에 대응하는 selectedPersonaIds 인덱스는 건드리지 않음(runHand에서 강제 지정하므로 무관)
       selectedPersonaIds = seats;
+    } else if (sim.oppMode === 'mirror') {
+      selectedPersonaIds = [sim.targetPersonaId, sim.targetPersonaId, sim.targetPersonaId];
     } else {
       selectedPersonaIds = sim.fixedOpponents.slice();
     }
